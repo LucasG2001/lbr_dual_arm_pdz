@@ -1,0 +1,201 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- KUKA iiwa7 Y-gripper, mounted on ${robot_name}_link_ee (the canonical
+    KUKA flange frame, 0.035 m above link_7; see iiwa7_description.xacro's
+    joint_ee) rather than link_7 directly, so gripper_base_link coincides
+    with link_ee instead of sitting 0.035 m short of it. Geometry and joint
+    definitions mirror ~/Downloads/kuka_iiwa7_y_gripper_share's
+    assets/urdf/kuka_iiwa7_y_gripper/urdf/kuka_iiwa7_y_gripper.urdf
+    (link_ee->TCP = 0.1455 m), with all gripper link/joint names prefixed by
+    robot_name so two instances can coexist in one bimanual URDF. -->
+    <!-- camera_xyz/camera_rpy: gripper_base_link -> realsense_link, and
+    camera_to_tcp_xyz/camera_to_tcp_rpy: realsense_link -> gripper_tcp.
+    Defaults are the CAD-derived nominal_flange_cam() transform from
+    Masterthesis-vision's joint_handeye_calib/nominal.py (same numbers as
+    that repo's config/camera_extrinsics_realsense.yaml "realsense_nominal"
+    entry), re-expressed relative to gripper_base_link for mount_yaw=0
+    (lbr_two's case: gripper_base_link coincides with the flange, no extra
+    rotation needed). lbr_one uses mount_yaw=pi, so its call site below
+    overrides these four with the same nominal transform re-derived through
+    that 180 deg offset instead: T_gripperbase_cam = Rz(-mount_yaw) . T_flange_cam. -->
+    <xacro:macro name="y_gripper" params="
+        robot_name
+        mount_yaw:=0
+        camera_xyz:='0.055667 0.009000 0.070776'
+        camera_rpy:='-0.523599 0.0 1.570796'
+        camera_to_tcp_xyz:='-0.009000 0.010847 0.092546'
+        camera_to_tcp_rpy:='0.0 0.523599 -1.570796'">
+        <link name="${robot_name}_gripper_base_link">
+            <inertial>
+                <origin xyz="0.0273839865 0 0.0414999998" rpy="0 0 0" />
+                <mass value="0.8" />
+                <inertia ixx="0.00166886667" ixy="0" ixz="0" iyy="0.00145432361" iyz="0"
+                    izz="0.00196999027" />
+            </inertial>
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh filename="package://lbr_dual_arm_description/meshes/y_gripper/hand.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+                <material name="gripper_body">
+                    <color rgba="0.55 0.56 0.58 1" />
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh filename="package://lbr_dual_arm_description/meshes/y_gripper/hand.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+            </collision>
+        </link>
+
+        <link name="${robot_name}_left_finger_link">
+            <inertial>
+                <origin xyz="0 -0.0275000005 0.1105" rpy="0 0 0" />
+                <mass value="0.08" />
+                <inertia ixx="6.74733326e-05" ixy="0" ixz="0" iyy="5.67733333e-05" iyz="0"
+                    izz="3.89133326e-05" />
+            </inertial>
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh
+                        filename="package://lbr_dual_arm_description/meshes/y_gripper/left_finger.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+                <material name="finger_dark">
+                    <color rgba="0.17 0.2 0.22 1" />
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh
+                        filename="package://lbr_dual_arm_description/meshes/y_gripper/left_finger.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+            </collision>
+        </link>
+
+        <link name="${robot_name}_right_finger_link">
+            <inertial>
+                <origin xyz="0 0.0275000005 0.1105" rpy="0 0 0" />
+                <mass value="0.08" />
+                <inertia ixx="6.74733326e-05" ixy="0" ixz="0" iyy="5.67733333e-05" iyz="0"
+                    izz="3.89133326e-05" />
+            </inertial>
+            <visual>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh
+                        filename="package://lbr_dual_arm_description/meshes/y_gripper/right_finger.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+                <material name="finger_dark">
+                    <color rgba="0.17 0.2 0.22 1" />
+                </material>
+            </visual>
+            <collision>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <geometry>
+                    <mesh
+                        filename="package://lbr_dual_arm_description/meshes/y_gripper/right_finger.STL"
+                        scale="0.001 0.001 0.001" />
+                </geometry>
+            </collision>
+        </link>
+
+        <link name="${robot_name}_gripper_tcp">
+            <inertial>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <mass value="0.001" />
+                <inertia ixx="1e-07" ixy="0" ixz="0" iyy="1e-07" iyz="0" izz="1e-07" />
+            </inertial>
+        </link>
+
+        <!-- Wrist-mounted RealSense, approximated as a solid 43x42x23 mm
+        (x,y,z) cuboid, 60 g total, for gravity-compensation purposes only
+        (no visual/collision geometry). Placed on the gripper_base_link ->
+        gripper_tcp path (rather than as a sibling of gripper_tcp) so it's
+        picked up by any KDL chain whose end_effector_link is gripper_tcp:
+        effort_controller_base.cpp builds its dynamics chain via
+        KDL::Tree::getChain(robot_base_link, end_effector_link), which only
+        includes segments actually on that path. gripper_tcp's absolute pose
+        relative to gripper_base_link is unchanged (still xyz 0 0 0.1455);
+        it's just reached via realsense_link instead of directly, using
+        camera_to_tcp_xyz/rpy below as the inverse of camera_xyz/rpy. -->
+        <link name="${robot_name}_realsense_link">
+            <inertial>
+                <origin xyz="0 0 0" rpy="0 0 0" />
+                <mass value="0.06" />
+                <inertia ixx="1.1465e-05" ixy="0" ixz="0" iyy="1.189e-05" iyz="0"
+                    izz="1.8065e-05" />
+            </inertial>
+        </link>
+
+        <joint name="${robot_name}_gripper_mount_joint" type="fixed">
+            <origin xyz="0 0 0" rpy="0 0 ${mount_yaw}" />
+            <parent link="${robot_name}_link_ee" />
+            <child link="${robot_name}_gripper_base_link" />
+        </joint>
+
+        <joint name="${robot_name}_realsense_mount_joint" type="fixed">
+            <origin xyz="${camera_xyz}" rpy="${camera_rpy}" />
+            <parent link="${robot_name}_gripper_base_link" />
+            <child link="${robot_name}_realsense_link" />
+        </joint>
+
+        <joint name="${robot_name}_gripper_tcp_joint" type="fixed">
+            <origin xyz="${camera_to_tcp_xyz}" rpy="${camera_to_tcp_rpy}" />
+            <parent link="${robot_name}_realsense_link" />
+            <child link="${robot_name}_gripper_tcp" />
+        </joint>
+
+        <joint name="${robot_name}_left_finger_joint" type="prismatic">
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <parent link="${robot_name}_gripper_base_link" />
+            <child link="${robot_name}_left_finger_link" />
+            <axis xyz="0 1 0" />
+            <limit lower="0" upper="0.04" effort="100" velocity="0.2" />
+            <dynamics damping="10.0" friction="0.0" />
+        </joint>
+
+        <joint name="${robot_name}_right_finger_joint" type="prismatic">
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <parent link="${robot_name}_gripper_base_link" />
+            <child link="${robot_name}_right_finger_link" />
+            <axis xyz="0 -1 0" />
+            <limit lower="0" upper="0.04" effort="100" velocity="0.2" />
+            <dynamics damping="10.0" friction="0.0" />
+            <mimic joint="${robot_name}_left_finger_joint" multiplier="1" offset="0" />
+        </joint>
+
+        <!-- The gripper has no real actuator/sensor: there is no hardware
+        interface backing it in any mode (mock/hardware), so without this
+        block joint_state_broadcaster never publishes
+        ${robot_name}_left_finger_joint and MoveIt's CurrentStateMonitor
+        reports the robot state as permanently incomplete. mock_components/
+        GenericSystem just holds the joint at initial_value with no real
+        actuation, same plugin lbr_system_interface.xacro uses for mock arms.
+        right_finger_joint doesn't need its own interface: it's a <mimic> of
+        left_finger_joint, so robot_state_publisher derives its TF without a
+        joint_states entry. -->
+        <ros2_control name="${robot_name}_gripper_system" type="system">
+            <hardware>
+                <plugin>mock_components/GenericSystem</plugin>
+            </hardware>
+            <joint name="${robot_name}_left_finger_joint">
+                <command_interface name="position">
+                    <param name="min">0</param>
+                    <param name="max">0.04</param>
+                </command_interface>
+                <state_interface name="position">
+                    <param name="initial_value">0.0</param>
+                </state_interface>
+            </joint>
+        </ros2_control>
+    </xacro:macro>
+</robot>

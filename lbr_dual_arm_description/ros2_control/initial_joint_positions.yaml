@@ -1,0 +1,9 @@
+# initial joint positions [degrees] -- mock/gazebo only, applied to both
+# lbr_one and lbr_two via lbr_dual_arm.xacro's initial_joint_positions_path
+A1 : 35.0
+A2 : 25.0
+A3 : 0.0
+A4 : -40.0
+A5 : 0.0
+A6 : 60.0
+A7 : 0.0

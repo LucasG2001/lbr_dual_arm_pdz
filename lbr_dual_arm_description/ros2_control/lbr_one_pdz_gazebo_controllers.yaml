@@ -1,0 +1,35 @@
+# gz_ros2_control parameters for lbr_one's controller_manager (namespace /lbr_one), used only in
+# mode:=gazebo gripper:=pdz. Mirrors lbr_description/ros2_control/lbr_controllers.yaml's
+# joint_trajectory_controller, but with lbr_one-prefixed arm joint names (this controller_manager
+# is per-arm, one gz_ros2_control plugin instance per xacro:iiwa7 call -- see
+# iiwa7_description.xacro's unconditional xacro:lbr_gazebo call) plus the pdz gripper's single
+# driving joint appended, so one FollowJointTrajectory action covers the whole arm+gripper.
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+/**/joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - lbr_one_A1
+      - lbr_one_A2
+      - lbr_one_A3
+      - lbr_one_A4
+      - lbr_one_A5
+      - lbr_one_A6
+      - lbr_one_A7
+      - lbr_one_pdz_gripper_left_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true

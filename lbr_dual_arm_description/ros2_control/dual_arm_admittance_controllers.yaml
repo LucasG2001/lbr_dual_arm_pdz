@@ -1,0 +1,71 @@
+# Position-mode controller_manager config for software-admittance bring-up
+# (lbr_dual_arm_bringup/launch/admittance.launch.py) -- brings up, per arm,
+# lbr_state_broadcaster (publishes LBRState incl. external_torque) and
+# lbr_joint_position_command_controller (position-interface setpoint
+# streaming) so a client can run a software admittance loop: measured
+# external torque -> task-space force -> task-space velocity -> integrated
+# joint-position setpoint, published to command/joint_position. No torque
+# command interface is used anywhere in this file -- position stays the
+# command interface throughout, same as dual_arm_controllers.yaml
+# (joint_trajectory_controller); this file only swaps which position-mode
+# controller writes the command. See
+# src/calibration/admittance_dual_arm.py in Masterthesis-vision, which
+# reuses lbr_demos_advanced_py's AdmittanceController law per arm.
+#
+# lbr_state_broadcaster / lbr_joint_position_command_controller come from
+# lbr_ros2_control (not the effort_controller_base family used by
+# cartesian_impedance_controller/gravity_compensation) and resolve their own
+# 7 joint names as "<robot_name>_A1".."<robot_name>_A7" from the `robot_name`
+# ros__parameter below -- NOT from an explicit `joints:` list, and NOT from
+# this file's own controller_manager namespace ("lbr_dual_arm"). Each
+# instance's `robot_name` is therefore set to "lbr_one"/"lbr_two" so it
+# resolves to that arm's actual joint names (lbr_one_A1.., lbr_two_A1..),
+# matching dual_arm_controllers.yaml's joint list.
+#
+# Known caveat (pre-existing in lbr_dual_arm_description's URDF, not
+# introduced here): lbr_system_interface.xacro's FRI-session auxiliary
+# sensor is hardcoded to the literal name "auxiliary_sensor" (not
+# robot-name-prefixed), so when lbr_dual_arm.xacro instantiates it twice
+# (once per arm) both hardware components export a state interface under
+# that same literal prefix. lbr_state_broadcaster's per-joint fields
+# (measured_joint_position, external_torque -- what admittance_dual_arm.py
+# actually consumes) are correctly filtered per instance via `robot_name`
+# above and are NOT affected. The FRI session/control-mode/connection-quality
+# metadata fields in each arm's published LBRState may be ambiguous between
+# arms (whichever hardware component's aux sensor the resource manager
+# resolves the shared key to) -- do not rely on those fields to distinguish
+# which arm you're looking at; use the topic namespace instead.
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    lbr_state_broadcaster_lbr_one:
+      type: lbr_ros2_control/LBRStateBroadcaster
+
+    lbr_state_broadcaster_lbr_two:
+      type: lbr_ros2_control/LBRStateBroadcaster
+
+    lbr_joint_position_command_controller_lbr_one:
+      type: lbr_ros2_control/LBRJointPositionCommandController
+
+    lbr_joint_position_command_controller_lbr_two:
+      type: lbr_ros2_control/LBRJointPositionCommandController
+
+/**/lbr_state_broadcaster_lbr_one:
+  ros__parameters:
+    robot_name: lbr_one
+
+/**/lbr_state_broadcaster_lbr_two:
+  ros__parameters:
+    robot_name: lbr_two
+
+/**/lbr_joint_position_command_controller_lbr_one:
+  ros__parameters:
+    robot_name: lbr_one
+
+/**/lbr_joint_position_command_controller_lbr_two:
+  ros__parameters:
+    robot_name: lbr_two

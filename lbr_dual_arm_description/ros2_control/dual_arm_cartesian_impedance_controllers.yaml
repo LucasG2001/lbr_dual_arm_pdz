@@ -1,0 +1,155 @@
+# Torque-mode controller_manager config for Cartesian-impedance bring-up
+# (lbr_dual_arm_bringup/launch/cartesian_impedance.launch.py) -- brings up
+# cartesian_impedance_controller on BOTH arms so a client can drive either
+# arm's flange with a compliant, task-space PD response instead of
+# joint_trajectory_controller's position control. Separate from
+# dual_arm_controllers.yaml (which stays position-mode, untouched) and from
+# dual_arm_gravity_compensation_controllers.yaml (torque, but zero task
+# stiffness -- pure hand-guiding).
+#
+# effort_controller_base's kinematic chain is single-chain (robot_base_link
+# -> end_effector_link), so each arm gets its own controller instance
+# (cartesian_impedance_lbr_one / _two) rather than one combined controller --
+# same reasoning as dual_arm_gravity_compensation_controllers.yaml (this
+# MoveIt config's composite "both_arms" group doesn't support combined
+# Cartesian-space operations either -- see mock_reachability_check.py).
+#
+# cartesian_impedance_controller comes from the kuka_lbr_control workspace's
+# `controllers` submodule (ros2_effort_controller fork, main branch --
+# https://github.com/idra-lab/kuka_lbr_control /
+# https://github.com/idra-lab/ros2_effort_controller), patched here (see
+# updateGainsFromParameters() in cartesian_impedance_controller.cpp) so
+# BOTH stiffness.*/nullspace_stiffness AND nullspace_desired_configuration
+# are live-rereadable every control cycle from this node's own
+# set_parameters service -- no controller restart, and nothing about the
+# controller's compliance behavior can be changed any other way except
+# through the set_cartesian_impedance service (see below); only change
+# these while the arm is stationary. Defaults below (1000 N/m trans /
+# 30 Nm/rad rot, nullspace_stiffness 0.0) are the out-of-the-box
+# "reasonable" values -- nullspace_stiffness starts at 0.0 deliberately (no
+# postural bias applied) since nullspace_desired_configuration has no
+# universally-safe default configuration; raise nullspace_stiffness only
+# together with a configuration, via set_gains()/set_nullspace_target() in
+# cartesian_impedance_dual_arm.py.
+#
+# Two ways to change stiffness/damping/nullspace_stiffness at runtime:
+#   1. stiffness.trans_*/rot_* + nullspace_stiffness parameters (diagonal
+#      only, set here at launch, live-reread via `ros2 param set` /
+#      set_parameters -- see cartesian_impedance_dual_arm.py's set_gains()).
+#      Damping is NOT taken from these directly -- it's re-derived every
+#      cycle from the current stiffness and task-space inertia via
+#      double_diagonalization.hpp's compute_correct_damping() (a fixed
+#      damping ratio of sqrt(2)/2), so there is no separate damping.* param.
+#   2. <controller_name>/set_cartesian_impedance service
+#      (cartesian_impedance_msgs/srv/SetCartesianImpedance) -- full 6x6
+#      stiffness AND damping matrices (so off-diagonal/coupled gains are
+#      possible, unlike the diagonal parameters) plus nullspace_stiffness,
+#      in one call. The first call to this service on a given activation
+#      permanently takes over from the stiffness.*/nullspace_stiffness
+#      parameters (both would otherwise fight every cycle); damping is then
+#      used exactly as given instead of being re-derived.
+# Either way, the controller does NOT apply the new gains instantly: it
+# EMA-blends the actually-applied stiffness/damping/nullspace_stiffness
+# toward the current target by impedance_blend_alpha (default 0.1, i.e.
+# ~10%/ms cycle, ~30ms to ~95% converged) every control cycle, so a gain
+# change never reaches the arm as an instantaneous step -- see
+# updateGainsFromParameters(). This also covers the nullspace-stiffness
+# switch to trajectory_nullspace_stiffness while a MoveIt trajectory is
+# EXECUTING/HOLDING (see cartesian_impedance_controllers.yaml in
+# lbr_dual_arm_moveit_config/config and updateTrajectoryExecution()).
+#
+# max_impedance_force/max_impedance_torque below cap manual/streamed
+# target_frame commands themselves (targetFrameCallback() ->
+# limitTargetStep()): a target far from the currently-applied one (e.g. a
+# MoveIt waypoint streamed by cartesian_impedance_dual_arm.py's
+# execute_planned_trajectory()) would otherwise turn straight into a large
+# instantaneous spring force/torque -- fast/violent motion that gets WORSE
+# the higher stiffness.* is set. The allowed step is scaled DOWN as
+# stiffness goes up so the resulting force/torque stays bounded regardless
+# of gain.
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 1000
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    cartesian_impedance_lbr_one:
+      type: cartesian_impedance_controller/CartesianImpedanceController
+
+    cartesian_impedance_lbr_two:
+      type: cartesian_impedance_controller/CartesianImpedanceController
+
+/**/cartesian_impedance_lbr_one:
+  ros__parameters:
+    command_current_configuration: true # KUKA specific
+    end_effector_link: "lbr_one_link_ee"
+    robot_base_link: "lbr_one_link_0"
+    ft_sensor_ref_link: "lbr_one_link_ee"
+    compliance_ref_link: "lbr_one_link_ee"
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_one_A1
+      - lbr_one_A2
+      - lbr_one_A3
+      - lbr_one_A4
+      - lbr_one_A5
+      - lbr_one_A6
+      - lbr_one_A7
+    delta_tau_max: 1.0 # Nm
+    max_impedance_force: 70.0 # N -- caps a manual/streamed target_frame step's spring force (stiffness.trans_* * position delta); see limitTargetStep() in cartesian_impedance_controller.cpp
+    max_impedance_torque: 20.0 # Nm -- same idea for orientation (stiffness.rot_* * angle)
+    stiffness: # w.r.t. compliance_ref_link coordinates -- live-rereadable at runtime, see note above
+      trans_x: 1500.0
+      trans_y: 1500.0
+      trans_z: 1500.0
+      rot_x: 75.0
+      rot_y: 75.0
+      rot_z: 75.0
+    nullspace_stiffness: 75.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
+    trajectory_nullspace_stiffness: 75.0 # Nm/rad, overrides nullspace_stiffness while EXECUTING/HOLDING a MoveIt trajectory -- code default (5.0) was too soft for A7 to converge within goal tolerance, causing trajectories to time out into ABORTED (see impedance jumps.md #1, jump #2); raise further if A7 still doesn't converge, but watch Cartesian tracking accuracy as a trade-off
+    impedance_blend_alpha: 0.1 # EMA blend factor/cycle toward the current stiffness/damping/nullspace_stiffness target -- see note above
+    compensate_gravity: false # KUKA FRI joint-impedance mode already compensates gravity internally -- true here double-counts it (see impedance jumps.md #7)
+    compensate_coriolis: true
+    compensate_dJdq: false
+
+/**/cartesian_impedance_lbr_two:
+  ros__parameters:
+    command_current_configuration: true # KUKA specific
+    end_effector_link: "lbr_two_link_ee"
+    robot_base_link: "lbr_two_link_0"
+    ft_sensor_ref_link: "lbr_two_link_ee"
+    compliance_ref_link: "lbr_two_link_ee"
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_two_A1
+      - lbr_two_A2
+      - lbr_two_A3
+      - lbr_two_A4
+      - lbr_two_A5
+      - lbr_two_A6
+      - lbr_two_A7
+    delta_tau_max: 1.0 # Nm
+    max_impedance_force: 70.0 # N -- caps a manual/streamed target_frame step's spring force (stiffness.trans_* * position delta); see limitTargetStep() in cartesian_impedance_controller.cpp
+    max_impedance_torque: 20.0 # Nm -- same idea for orientation (stiffness.rot_* * angle)
+    stiffness: # w.r.t. compliance_ref_link coordinates -- live-rereadable at runtime, see note above
+      trans_x: 1500.0
+      trans_y: 1500.0
+      trans_z: 1500.0
+      rot_x: 75.0
+      rot_y: 75.0
+      rot_z: 75.0
+    nullspace_stiffness: 75.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
+    trajectory_nullspace_stiffness: 75.0 # Nm/rad, overrides nullspace_stiffness while EXECUTING/HOLDING a MoveIt trajectory -- code default (5.0) was too soft for A7 to converge within goal tolerance, causing trajectories to time out into ABORTED (see impedance jumps.md #1, jump #2); raise further if A7 still doesn't converge, but watch Cartesian tracking accuracy as a trade-off
+    impedance_blend_alpha: 0.1 # EMA blend factor/cycle toward the current stiffness/damping/nullspace_stiffness target -- see note above
+    compensate_gravity: false # KUKA FRI joint-impedance mode already compensates gravity internally -- true here double-counts it (see impedance jumps.md #7)
+    compensate_coriolis: true
+    compensate_dJdq: false

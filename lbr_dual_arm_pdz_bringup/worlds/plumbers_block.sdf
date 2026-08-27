@@ -1,0 +1,54 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="plumbers_block">
+    <!-- TEMP diagnostic (2026-08-25): gravity off to isolate whether arm/gripper motion-plan
+    execution itself is correct, independent of the fixture-collision RTF problem. Revert to the
+    default (no <gravity> tag, i.e. -9.8 z) once that's confirmed. -->
+    <gravity>0 0 0</gravity>
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"></plugin>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"></plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"></plugin>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"></plugin>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Ground plane at the real rig's floor (z = -0.025, i.e. table_z per
+    planning/robot/workcell.py:get_kuka_mount_block_height -- the two KUKA
+    bases sit 2.5cm above this on their own riser blocks; see the approved
+    plan's fixture-placement finding #2). A flat box stands in for the real
+    table -- colors/materials are not modeled beyond a plain grey. -->
+    <model name="table">
+      <static>true</static>
+      <pose>0 0 -0.0251 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>2.0 2.0 0.05</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>2.0 2.0 0.05</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.52 1</ambient>
+            <diffuse>0.5 0.5 0.52 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

@@ -1,0 +1,247 @@
+<?xml version="1.0"?>
+
+<robot name="lbr_dual_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- include the lbr iiwa macro -->
+    <xacro:include filename="$(find lbr_description)/urdf/iiwa7/iiwa7_description.xacro" />
+
+    <!-- also include directly (xacro:include's macro registration doesn't propagate out of the
+    xacro:iiwa7 macro body it's nested in above); needed at file scope for the top-level
+    xacro:lbr_gazebo_plugin call below (gripper:=pdz's single combined plugin instance). -->
+    <xacro:include filename="$(find lbr_description)/gazebo/lbr_gazebo.xacro" />
+
+    <!-- include the Y-gripper macro -->
+    <xacro:include filename="$(find lbr_dual_arm_description)/urdf/y_gripper.xacro" />
+
+    <!-- include the pdz gripper macro (assets/pdz_gripper_description in the Fabrica repo,
+    symlinked into this workspace's src/) -->
+    <xacro:include filename="$(find pdz_gripper_description)/urdf/pdz_gripper_macro.xacro" />
+
+    <!-- add an arguent to allow for mock / hardware / gazebo -->
+    <xacro:arg name="mode" default="mock" />
+    <xacro:property name="mode" value="$(arg mode)" />
+
+    <!-- attach a Y-gripper to each arm's link_7 by default; pass
+    use_gripper:=false for the bare flange (no end effector attached) -->
+    <xacro:arg name="use_gripper" default="true" />
+    <xacro:property name="use_gripper" value="$(arg use_gripper)" />
+
+    <!-- which gripper to mount: 'y_gripper' (default, existing hardware) or 'pdz' (assets/
+    pdz_gripper_description). Only affects mode:=gazebo's controller_manager parameters file(s)
+    below; mock/hardware system_config yaml is unaffected since the pdz gripper has no hardware
+    interface of its own outside gazebo (see pdz_gripper_description's README). -->
+    <xacro:arg name="gripper" default="y_gripper" />
+    <xacro:property name="gripper" value="$(arg gripper)" />
+
+    <!-- arm_control (mode:=gazebo only): 'joint_trajectory' (default) keeps the arms on
+    position-interface JointTrajectoryControllers; 'cartesian_impedance' switches them to the
+    effort-interface cartesian_impedance_controller (see
+    dual_arm_gazebo_cartesian_impedance_controllers.yaml). Selecting 'cartesian_impedance'
+    forces the arm joints to expose an effort command interface only (gazebo_command_mode
+    below, threaded into lbr_system_interface.xacro) and picks the matching controllers yaml.
+    Expected combo for the impedance bringup: mode:=gazebo gripper:=pdz
+    arm_control:=cartesian_impedance. -->
+    <xacro:arg name="arm_control" default="joint_trajectory" />
+    <xacro:property name="arm_control" value="$(arg arm_control)" />
+    <xacro:property name="gazebo_command_mode"
+        value="${'effort' if arm_control == 'cartesian_impedance' else 'position'}" />
+
+    <!-- Namespace for the single combined gz_ros2_control plugin instance used when
+    gripper:=pdz (see spawn_gazebo_plugin below); must match the robot_name the launch file
+    uses for robot_state_publisher, since the plugin's default (gazebo_robot_param_node="")
+    relative lookup resolves "robot_state_publisher" inside its own <namespace>. -->
+    <xacro:arg name="robot_name" default="lbr_dual_arm_pdz" />
+    <xacro:property name="robot_name" value="$(arg robot_name)" />
+
+    <!-- gripper:=='pdz' collapses Gazebo to ONE gz_ros2_control plugin instance covering both
+    arms (see the xacro:lbr_gazebo_plugin call below), instead of xacro:iiwa7's default one-
+    plugin-per-arm pattern: each per-arm plugin instance was found to claim every
+    <ros2_control> hardware component in the whole model regardless of which arm "owns" it (see
+    dual_arm_pdz_gazebo_controllers.yaml's header comment), so two instances fight rather than
+    partition cleanly. gripper:=='y_gripper' keeps the original per-arm plugin behavior
+    (untouched, out of scope for this fix). -->
+    <!-- collapse to the single combined plugin instance for gripper:=pdz OR for the
+    cartesian-impedance bringup (both need "one controller_manager, two per-arm controller
+    instances"). -->
+    <xacro:property name="use_combined_gazebo_plugin"
+        value="${gripper == 'pdz' or arm_control == 'cartesian_impedance'}" />
+    <xacro:property name="spawn_gazebo_plugin" value="${not use_combined_gazebo_plugin}" />
+    <xacro:property name="combined_gazebo_controllers_yaml"
+        value="${'dual_arm_gazebo_cartesian_impedance_controllers.yaml' if arm_control == 'cartesian_impedance' else 'dual_arm_pdz_gazebo_controllers.yaml'}" />
+    <xacro:property name="pdz_gazebo_controllers_yaml_path"
+        value="$(find lbr_dual_arm_description)/ros2_control/${combined_gazebo_controllers_yaml}" />
+
+    <xacro:property name="gazebo_robot_param_node" value="" />
+
+    <!-- arms selects which arm(s) actually connect as `mode` (e.g. real FRI
+    hardware); the other arm is forced to mock so its SystemInterface never
+    blocks on_activate waiting for a robot that isn't powered on (both arms'
+    ros2_control tags load into the same ros2_control_node process, and
+    on_activate has no timeout, see system_interface.cpp).
+    Choices: both, lbr_one, lbr_two -->
+    <xacro:arg name="arms" default="both" />
+    <xacro:property name="arms" value="$(arg arms)" />
+    <xacro:property name="lbr_one_mode" value="${'mock' if arms == 'lbr_two' else mode}" />
+    <xacro:property name="lbr_two_mode" value="${'mock' if arms == 'lbr_one' else mode}" />
+
+    <!-- position (default) drives joint_trajectory_controller for normal
+    motion; torque selects the *_system_config_torque.yaml variant so
+    gravity_compensation has an effort command interface to write to, for
+    hand-guided calibration bring-up (see calibration.launch.py) -->
+    <xacro:arg name="command_mode" default="position" />
+    <xacro:property name="command_mode" value="$(arg command_mode)" />
+    <xacro:property name="lbr_one_system_config"
+        value="${'lbr_one_system_config_torque.yaml' if command_mode == 'torque' else 'lbr_one_system_config.yaml'}" />
+    <xacro:property name="lbr_two_system_config"
+        value="${'lbr_two_system_config_torque.yaml' if command_mode == 'torque' else 'lbr_two_system_config.yaml'}" />
+
+    <!-- add a base link -->
+    <link name="base_link" />
+
+    <!-- KDL requires a link without inertia / Gazebo requires a connection to world link or
+    robot will tipple, see iiwa7.xacro / https://github.com/lbr-stack/lbr_fri_ros2_stack/issues/230.
+    lbr_dual_arm.xacro is used directly as the robot_description root (unlike iiwa7.xacro, it is
+    not itself wrapped by a top-level file that adds this), so base_link must be anchored here. -->
+    <link name="world" />
+    <joint name="world_joint" type="fixed">
+        <parent link="world" />
+        <child link="base_link" />
+    </joint>
+
+    <!-- add joints that connect the robots -->
+    <joint name="lbr_one_base_joint" type="fixed">
+        <origin xyz="0 -0.42 0" rpy="0 0 0" />
+        <parent link="base_link" />
+        <child link="lbr_one_link_0" />
+    </joint>
+
+    <joint name="lbr_two_base_joint" type="fixed">
+        <origin xyz="0 0.42 0" rpy="0 0 0" />
+        <parent link="base_link" />
+        <child link="lbr_two_link_0" />
+    </joint>
+
+    <!-- add robot 1 via macro, note that different lbr_one_system_config.yaml are used (to
+    configure port id) -->
+    <xacro:iiwa7
+        robot_name="lbr_one"
+        mode="${lbr_one_mode}"
+        system_config_path="$(find lbr_dual_arm_description)/ros2_control/${lbr_one_system_config}"
+        initial_joint_positions_path="$(find lbr_dual_arm_description)/ros2_control/initial_joint_positions.yaml"
+        gazebo_controllers_yaml_path="$(find lbr_description)/ros2_control/lbr_controllers.yaml"
+        gazebo_robot_param_node="${gazebo_robot_param_node}"
+        gazebo_command_mode="${gazebo_command_mode}"
+        spawn_gazebo_plugin="${spawn_gazebo_plugin}" />
+
+    <!-- add robot 2 via macro -->
+    <xacro:iiwa7
+        robot_name="lbr_two"
+        mode="${lbr_two_mode}"
+        system_config_path="$(find lbr_dual_arm_description)/ros2_control/${lbr_two_system_config}"
+        initial_joint_positions_path="$(find lbr_dual_arm_description)/ros2_control/initial_joint_positions.yaml"
+        gazebo_controllers_yaml_path="$(find lbr_description)/ros2_control/lbr_controllers.yaml"
+        gazebo_robot_param_node="${gazebo_robot_param_node}"
+        gazebo_command_mode="${gazebo_command_mode}"
+        spawn_gazebo_plugin="${spawn_gazebo_plugin}" />
+
+    <!-- Single combined gz_ros2_control plugin instance for BOTH arms (see
+    use_combined_gazebo_plugin / spawn_gazebo_plugin above), loading TWO controller instances
+    into ONE controller_manager under this plugin's namespace; matches the real dual-arm rig's
+    "one controller_manager, two per-arm controller instances" pattern (see
+    dual_arm_cartesian_impedance_controllers.yaml for the real-hardware analog).
+      - gripper:=pdz, arm_control:=joint_trajectory -> joint_trajectory_controller_lbr_one/_two
+        (dual_arm_pdz_gazebo_controllers.yaml)
+      - arm_control:=cartesian_impedance -> cartesian_impedance_lbr_one/_two + per-arm gripper
+        controllers (dual_arm_gazebo_cartesian_impedance_controllers.yaml)
+    gazebo_robot_param_node="" (default relative lookup) works because the launch file's
+    top-level robot_state_publisher runs under this same ${robot_name} namespace. -->
+    <xacro:if value="${mode == 'gazebo' and use_combined_gazebo_plugin}">
+        <xacro:lbr_gazebo_plugin robot_name="${robot_name}"
+            controllers_yaml_path="${pdz_gazebo_controllers_yaml_path}"
+            robot_param_node="${gazebo_robot_param_node}" />
+    </xacro:if>
+
+    <!-- add the Y-gripper to each arm's link_7, unless use_gripper:=false.
+    lbr_one's gripper is mounted rotated 180deg (yaw) about its own flange
+    (lbr_one_link_7) Z axis relative to lbr_two's, via a fixed offset on the
+    gripper's own mount joint, not the arm's base pose. -->
+    <!-- lbr_one's camera_xyz/rpy and camera_to_tcp_xyz/rpy override the
+    y_gripper macro's defaults (which assume mount_yaw=0, i.e. lbr_two's
+    orientation): same nominal_flange_cam() transform from
+    Masterthesis-vision's nominal.py, re-derived through lbr_one's mount_yaw
+    = pi offset. See y_gripper.xacro's macro-level comment for the source
+    and derivation. -->
+    <xacro:if value="${use_gripper}">
+        <xacro:if value="${gripper == 'y_gripper'}">
+            <xacro:y_gripper robot_name="lbr_one" mount_yaw="3.1415926535897931"
+                camera_xyz="-0.055667 -0.009000 0.070776"
+                camera_rpy="-0.523599 0.0 -1.570796"
+                camera_to_tcp_xyz="-0.009000 0.010847 0.092546"
+                camera_to_tcp_rpy="0.0 -0.523599 1.570796" />
+            <xacro:y_gripper robot_name="lbr_two" />
+        </xacro:if>
+
+        <!-- pdz gripper: mounted on each arm's link_ee. Both arm bases share the same
+        orientation (not mirrored). pdz_gripper_description's own convention puts its finger-
+        opening axis on its local +X (right finger at +X in the open CAD pose; see its README
+        and pdz_gripper_macro.xacro's header comment), but Fabrica's planner
+        (planning/robot/geometry.py's get_kuka_basis_directions(), reused for gripper_type
+        'pdz' since it treats 'pdz' identically to the Y-gripper for all mesh/grasp geometry)
+        assumes the closing axis sits on flange +Y, right finger at +Y (see
+        get_kuka_meshes_transforms(): kuka_rightfinger translates toward +Y). A zero mount
+        origin therefore leaves the gripper 90deg off from every planned grasp. A first pass
+        used +90deg (pi/2) about Z to map local +X onto flange +Y; user-confirmed visual check
+        in Gazebo showed that was 180deg off (right finger should land on flange -Y, not +Y),
+        so the mount uses -90deg (-pi/2) about Z instead; same rotation for both arms since
+        both bases have identical orientation.
+        The <ros2_control> hardware plugin must match `mode`
+        exactly like lbr_system_interface.xacro's joints do; gz_ros2_control (mode:=gazebo)
+        only accepts joints declared under its own gz_ros2_control/GazeboSimSystem plugin class;
+        mock_components/GenericSystem (valid for mode:=mock's controller_manager) is NOT a
+        registered pluginlib class under gz_ros2_control's plugin loader and crashes gz-sim on
+        load if used there (confirmed: "does not exist. Declared types are
+        gz_ros2_control/GazeboSimSystem ign_ros2_control/IgnitionSystem", then a GUI segfault).
+        right_finger_joint is a <mimic> of left_finger_joint (see pdz_gripper_macro.xacro) so it
+        needs no interface of its own. -->
+        <xacro:property name="pdz_gripper_hw_plugin"
+            value="${'gz_ros2_control/GazeboSimSystem' if mode == 'gazebo' else 'mock_components/GenericSystem'}" />
+        <xacro:if value="${gripper == 'pdz'}">
+            <xacro:pdz_gripper parent="lbr_one_link_ee" prefix="lbr_one_">
+                <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966" />
+            </xacro:pdz_gripper>
+            <ros2_control name="lbr_one_pdz_gripper_system" type="system">
+                <hardware>
+                    <plugin>${pdz_gripper_hw_plugin}</plugin>
+                </hardware>
+                <joint name="lbr_one_pdz_gripper_left_finger_joint">
+                    <command_interface name="position">
+                        <param name="min">0</param>
+                        <param name="max">0.032</param>
+                    </command_interface>
+                    <state_interface name="position">
+                        <param name="initial_value">0.0</param>
+                    </state_interface>
+                    <state_interface name="velocity" />
+                </joint>
+            </ros2_control>
+
+            <xacro:pdz_gripper parent="lbr_two_link_ee" prefix="lbr_two_">
+                <origin xyz="0 0 0" rpy="0 0 -1.5707963267948966" />
+            </xacro:pdz_gripper>
+            <ros2_control name="lbr_two_pdz_gripper_system" type="system">
+                <hardware>
+                    <plugin>${pdz_gripper_hw_plugin}</plugin>
+                </hardware>
+                <joint name="lbr_two_pdz_gripper_left_finger_joint">
+                    <command_interface name="position">
+                        <param name="min">0</param>
+                        <param name="max">0.032</param>
+                    </command_interface>
+                    <state_interface name="position">
+                        <param name="initial_value">0.0</param>
+                    </state_interface>
+                    <state_interface name="velocity" />
+                </joint>
+            </ros2_control>
+        </xacro:if>
+    </xacro:if>
+</robot>

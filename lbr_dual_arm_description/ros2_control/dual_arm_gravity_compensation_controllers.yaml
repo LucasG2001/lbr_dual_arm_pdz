@@ -1,0 +1,94 @@
+# Torque-mode controller_manager config for hand-guided calibration bring-up
+# (lbr_dual_arm_bringup/launch/calibration.launch.py) -- brings up
+# gravity_compensation on BOTH arms so the operator can hand-guide either one
+# and press Enter to capture, instead of sending MoveGroup goals. Separate
+# from dual_arm_controllers.yaml (which stays position-mode /
+# joint_trajectory_controller, untouched) since gravity_compensation needs an
+# effort command interface and effort_controller_base's kinematic chain is
+# single-chain (robot_base_link -> end_effector_link), so each arm gets its
+# own controller instance (gravity_compensation_lbr_one / _lbr_two) rather
+# than one combined controller -- mirrors mock_reachability_check.py's
+# finding that this MoveIt config's composite "both_arms" group doesn't
+# support combined Cartesian-space operations either; per-arm is the
+# reliable unit here too.
+#
+# gravity_compensation itself comes from the kuka_lbr_control workspace's
+# `controllers` submodule (ros2_effort_controller fork, main branch -- see
+# https://github.com/idra-lab/kuka_lbr_control). Its gravity term is a KDL
+# ChainDynParam::JntToGravity() computed over the single chain returned by
+# KDL::Tree::getChain(robot_base_link, end_effector_link)
+# (effort_controller_base.cpp) -- segments beyond end_effector_link are NOT
+# included, no matter what mass/inertia they carry in the URDF. This
+# end_effector_link is therefore set to lbr_{one,two}_gripper_tcp (the actual
+# TCP, past gripper_base_link's 0.8 kg body) rather than lbr_{one,two}_link_ee
+# (the bare flange) -- pointing it at link_ee, as the single-arm reference
+# config does, would silently exclude the whole gripper assembly from this
+# gravity term. y_gripper.xacro puts gripper_tcp's parent chain through
+# realsense_link (the wrist-mounted RealSense's 60 g cuboid, see that file)
+# rather than as a sibling of it, specifically so that chain also picks up
+# the camera's mass -- KDL::Chain is a linear sequence with no branching, so
+# only whatever's actually on the base->end_effector_link path counts; a
+# sibling branch's mass would be silently ignored no matter how it's
+# populated in the URDF. (The finger links stay excluded either way: they
+# hang off gripper_base_link via their own prismatic joints, a separate
+# branch from the one leading to gripper_tcp.)
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 1000
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    gravity_compensation_lbr_one:
+      type: gravity_compensation/GravityCompensation
+
+    gravity_compensation_lbr_two:
+      type: gravity_compensation/GravityCompensation
+
+/**/gravity_compensation_lbr_one:
+  ros__parameters:
+    end_effector_link: "lbr_one_gripper_tcp"
+    robot_base_link: "lbr_one_link_0"
+    ft_sensor_ref_link: "lbr_one_link_ee"
+    # false: the earlier true setting double-applied gravity on top of the
+    # FRI app's own compensation, matching the single-arm reference config's
+    # compensate_gravity:false default.
+    compensate_gravity: false
+    compensate_coriolis: false
+    command_current_configuration: true # KUKA specific
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_one_A1
+      - lbr_one_A2
+      - lbr_one_A3
+      - lbr_one_A4
+      - lbr_one_A5
+      - lbr_one_A6
+      - lbr_one_A7
+
+/**/gravity_compensation_lbr_two:
+  ros__parameters:
+    end_effector_link: "lbr_two_gripper_tcp"
+    robot_base_link: "lbr_two_link_0"
+    ft_sensor_ref_link: "lbr_two_link_ee"
+    # see gravity_compensation_lbr_one above for why this is false
+    compensate_gravity: false
+    compensate_coriolis: false
+    command_current_configuration: true # KUKA specific
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_two_A1
+      - lbr_two_A2
+      - lbr_two_A3
+      - lbr_two_A4
+      - lbr_two_A5
+      - lbr_two_A6
+      - lbr_two_A7

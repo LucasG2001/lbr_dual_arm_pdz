@@ -1,0 +1,34 @@
+# Static box CollisionObjects for the dual-arm KUKA mock MoveIt planning
+# scene (move_group.launch.py mode:=mock), published by
+# scripts/publish_mock_scene_objects.py.
+#
+# Pose/size live here rather than as launch arguments or CLI flags by
+# design: the mock scene's fixed obstacles shouldn't need to be re-specified
+# per invocation of whichever launch file starts the node.
+#
+# frame_id: the dual-arm URDF's root link (lbr_dual_arm.xacro), the midpoint
+# between lbr_one (y=-0.42 m) and lbr_two (y=+0.42 m). Its z=0 plane is the
+# two KUKA bases' mounting height, NOT the table surface -- the real rig has
+# both bases sitting on a ~2.5cm riser block above the table
+# (get_kuka_mount_block_height() in Fabrica's planning/robot/workcell.py;
+# same convention as this package's Gazebo world,
+# worlds/plumbers_block.sdf's "table" model). So the table surface is at
+# z=-0.025 in this frame, not z=0.
+frame_id: base_link
+
+objects:
+  - id: table
+    # x, y, z extents in meters -- footprint matches worlds/plumbers_block.sdf's
+    # table model.
+    size_m: [2.0, 2.0, 0.05]
+    # Box-center pose in frame_id. z = -0.025 - size_m[2] / 2 so the box's
+    # top face is exactly at the real table surface (z=-0.025).
+    position_m: [0.0, 0.0, -0.05]
+    rpy_rad: [0.0, 0.0, 0.0]
+  - id: mock_box
+    # x, y, z extents in meters.
+    size_m: [0.12, 0.26, 0.35]
+    # Box-center pose in frame_id. z = -0.025 + size_m[2] / 2 so the box's
+    # bottom face rests exactly on the table surface (z=-0.025).
+    position_m: [0.0545, 0.02, 0.15]
+    rpy_rad: [0.0, 0.0, 0.0]

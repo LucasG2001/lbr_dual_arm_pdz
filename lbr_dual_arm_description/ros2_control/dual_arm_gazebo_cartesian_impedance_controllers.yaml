@@ -1,0 +1,157 @@
+# Gazebo (gz_ros2_control) controller_manager config for the dual-arm pdz rig driven by the
+# KUKA Cartesian-impedance controller instead of position JointTrajectoryControllers. Selected
+# via lbr_dual_arm.xacro's arm_control:=cartesian_impedance (mode:=gazebo gripper:=pdz), which
+# also forces the 7 arm joints to expose an EFFORT command interface only (see
+# gazebo_command_mode in lbr_system_interface.xacro).
+#
+# This is the Gazebo twin of lbr_dual_arm_description/ros2_control/
+# dual_arm_cartesian_impedance_controllers.yaml (real FRI hardware). Same instance topology --
+# ONE controller_manager (the single combined gz_ros2_control plugin, namespace /<robot_name>),
+# TWO per-arm cartesian_impedance_controller instances (effort_controller_base's kinematic
+# chain is single-chain, so one instance per arm, not a combined 14-joint controller) -- plus
+# TWO per-arm position JTCs for the pdz gripper driving joints (the arm-side controllers no
+# longer carry the gripper joint the way dual_arm_pdz_gazebo_controllers.yaml's arm JTCs do).
+#
+# Deltas from the hardware yaml (mirroring kuka_lbr_control/kuka_control/config/
+# gazebo_controllers.yaml vs .../controllers.yaml -- the same package's own sim-vs-hardware
+# split):
+#   * command_current_configuration: true -> false. On FRI hardware the controller also streams
+#     the current joint configuration into FRI's joint-impedance layer; in Gazebo there is no
+#     such layer (effort only). kuka_control's config comment: "must be false when using gazebo".
+#   * compensate_gravity: false -> true. FRI compensates gravity internally on hardware; in sim
+#     the controller's own RNE (KDL, from the URDF inertials) must hold the arm up.
+#   * compensate_coriolis: true (kept).
+#   * nullspace_stiffness: 75.0 -> 0.0 at startup. Raise at runtime once a
+#     nullspace_desired_configuration has been set (set_parameters / set_nullspace_target),
+#     same procedure as on hardware -- there is no universally-safe default posture.
+#   * stiffness / trajectory_nullspace_stiffness kept at the hardware values as a STARTING
+#     POINT. Sim inertia/contact differ, so expect to retune (kuka_control's sim default is
+#     1000 N/m trans / 30 Nm/rad rot); lower these if the arm is unstable.
+#
+# update_rate 1000 matches worlds/plumbers_block.sdf's <max_step_size>0.001</max_step_size>.
+#
+# See dual_arm_cartesian_impedance_controllers.yaml's header for the full description of the
+# runtime gain-change paths (stiffness.* params vs set_cartesian_impedance service),
+# impedance_blend_alpha EMA blending, and max_impedance_force/torque target-step limiting --
+# all identical here.
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 1000
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    cartesian_impedance_lbr_one:
+      type: cartesian_impedance_controller/CartesianImpedanceController
+
+    cartesian_impedance_lbr_two:
+      type: cartesian_impedance_controller/CartesianImpedanceController
+
+    gripper_controller_lbr_one:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_controller_lbr_two:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+/**/cartesian_impedance_lbr_one:
+  ros__parameters:
+    command_current_configuration: false # must be false in Gazebo -- no FRI layer to feed
+    end_effector_link: "lbr_one_link_ee"
+    robot_base_link: "lbr_one_link_0"
+    ft_sensor_ref_link: "lbr_one_link_ee"
+    compliance_ref_link: "lbr_one_link_ee"
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_one_A1
+      - lbr_one_A2
+      - lbr_one_A3
+      - lbr_one_A4
+      - lbr_one_A5
+      - lbr_one_A6
+      - lbr_one_A7
+    delta_tau_max: 1.0 # Nm
+    max_impedance_force: 70.0 # N
+    max_impedance_torque: 20.0 # Nm
+    stiffness: # starting point -- retune for sim, see header
+      trans_x: 1500.0
+      trans_y: 1500.0
+      trans_z: 1500.0
+      rot_x: 75.0
+      rot_y: 75.0
+      rot_z: 75.0
+    nullspace_stiffness: 0.0 # raise at runtime once nullspace_desired_configuration is set
+    trajectory_nullspace_stiffness: 75.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
+    impedance_blend_alpha: 0.1
+    compensate_gravity: true # no FRI gravity comp in sim -- controller must do it
+    compensate_coriolis: true
+    compensate_dJdq: false
+
+/**/cartesian_impedance_lbr_two:
+  ros__parameters:
+    command_current_configuration: false # must be false in Gazebo -- no FRI layer to feed
+    end_effector_link: "lbr_two_link_ee"
+    robot_base_link: "lbr_two_link_0"
+    ft_sensor_ref_link: "lbr_two_link_ee"
+    compliance_ref_link: "lbr_two_link_ee"
+    command_interfaces:
+      - effort
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - lbr_two_A1
+      - lbr_two_A2
+      - lbr_two_A3
+      - lbr_two_A4
+      - lbr_two_A5
+      - lbr_two_A6
+      - lbr_two_A7
+    delta_tau_max: 1.0 # Nm
+    max_impedance_force: 70.0 # N
+    max_impedance_torque: 20.0 # Nm
+    stiffness: # starting point -- retune for sim, see header
+      trans_x: 1500.0
+      trans_y: 1500.0
+      trans_z: 1500.0
+      rot_x: 75.0
+      rot_y: 75.0
+      rot_z: 75.0
+    nullspace_stiffness: 0.0 # raise at runtime once nullspace_desired_configuration is set
+    trajectory_nullspace_stiffness: 75.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
+    impedance_blend_alpha: 0.1
+    compensate_gravity: true # no FRI gravity comp in sim -- controller must do it
+    compensate_coriolis: true
+    compensate_dJdq: false
+
+# pdz gripper driving joints -- one position JTC per arm (right_finger_joint is a <mimic>, so it
+# is not listed; see lbr_dual_arm.xacro's pdz gripper comment). plan_executor_node.py
+# (arm_control:=cartesian_impedance) sends single-joint FollowJointTrajectory goals here.
+/**/gripper_controller_lbr_one:
+  ros__parameters:
+    joints:
+      - lbr_one_pdz_gripper_left_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true
+
+/**/gripper_controller_lbr_two:
+  ros__parameters:
+    joints:
+      - lbr_two_pdz_gripper_left_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true

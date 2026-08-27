@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>lbr_dual_arm_pdz_bringup</name>
+  <version>0.1.0</version>
+  <description>Gazebo (gz-sim) bringup for the dual-arm KUKA iiwa7 rig with the pdz gripper, spawning the plumbers_block fixture/parts and replaying a Fabrica motion plan (logs/plumbers_block_sim) via FollowJointTrajectory -- either position JointTrajectoryControllers (default) or the effort-interface cartesian_impedance_controller (arm_control:=cartesian_impedance).</description>
+  <maintainer email="pdz@todo.todo">PDZ</maintainer>
+  <license>Proprietary</license>
+
+  <exec_depend>control_msgs</exec_depend>
+  <!-- cartesian_impedance_controller/CartesianImpedanceController (kuka_lbr_control workspace)
+       -- only loaded for gazebo.launch.py arm_control:=cartesian_impedance. -->
+  <exec_depend>cartesian_impedance_controller</exec_depend>
+  <exec_depend>lbr_bringup</exec_depend>
+  <exec_depend>lbr_dual_arm_description</exec_depend>
+  <exec_depend>pdz_gripper_description</exec_depend>
+  <exec_depend>plumbers_block_description</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_interfaces</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <!-- HoldClose.srv for hardware_plan_executor_node.py --gripper (servo_gripper_julien,
+       workspace ~/Workspaces/servo_test). Only needed for gripper actuation; the node
+       tolerates its absence for arm-only replay. -->
+  <exec_depend>servo_gripper_julien</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

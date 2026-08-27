@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="lbr_dual_arm" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- use_gripper controls arm_one/arm_two/both_arms' tip link: the bare
+    flange (lbr_{one,two}_link_ee) when false, the Y-gripper TCP
+    (lbr_{one,two}_gripper_tcp) when true (default); must match the
+    use_gripper arg passed to lbr_dual_arm.xacro / lbr_dual_arm_bringup's
+    launch files, since this file only changes group semantics, not which
+    links actually exist in the URDF.
+
+    arm_one_flange/arm_two_flange/both_arms_flange are ALWAYS pinned to the
+    bare flange regardless of use_gripper; these exist so hand-eye
+    calibration code can keep a fast, tip-matched KDL IK solver for
+    lbr_{one,two}_link_ee even when arm_one/arm_two's own tip has moved to
+    the gripper TCP (MoveIt's KDL plugin only does closed-form IK for a
+    group's configured tip_link; constraining a non-tip link of arm_one
+    would silently fall back to the slow generic sampler). -->
+    <xacro:arg name="use_gripper" default="true" />
+    <xacro:property name="use_gripper" value="$(arg use_gripper)" />
+    <xacro:property name="gripper_on" value="${use_gripper}" />
+    <xacro:property name="lbr_one_tip" value="${'lbr_one_gripper_tcp' if gripper_on else 'lbr_one_link_ee'}" />
+    <xacro:property name="lbr_two_tip" value="${'lbr_two_gripper_tcp' if gripper_on else 'lbr_two_link_ee'}" />
+
+    <group name="arm_one">
+        <chain base_link="lbr_one_link_0" tip_link="${lbr_one_tip}"/>
+    </group>
+    <group name="arm_two">
+        <chain base_link="lbr_two_link_0" tip_link="${lbr_two_tip}"/>
+    </group>
+    <group name="both_arms">
+        <group name="arm_one"/>
+        <group name="arm_two"/>
+    </group>
+
+    <group name="arm_one_flange">
+        <chain base_link="lbr_one_link_0" tip_link="lbr_one_link_ee"/>
+    </group>
+    <group name="arm_two_flange">
+        <chain base_link="lbr_two_link_0" tip_link="lbr_two_link_ee"/>
+    </group>
+    <group name="both_arms_flange">
+        <group name="arm_one_flange"/>
+        <group name="arm_two_flange"/>
+    </group>
+
+    <group_state name="zero" group="arm_one">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="0"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+    </group_state>
+    <group_state name="zero" group="arm_two">
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="0"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="zero" group="both_arms">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="0"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="0"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="zero" group="arm_one_flange">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="0"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+    </group_state>
+    <group_state name="zero" group="arm_two_flange">
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="0"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="zero" group="both_arms_flange">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="0"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="0"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="arm_one">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0.4363"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="1.5707"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="arm_two">
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0.4363"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="1.5707"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="both_arms">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0.4363"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="1.5707"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0.4363"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="1.5707"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="arm_one_flange">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0.4363"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="1.5707"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="arm_two_flange">
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0.4363"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="1.5707"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+    <group_state name="transport" group="both_arms_flange">
+        <joint name="lbr_one_A1" value="0"/>
+        <joint name="lbr_one_A2" value="0.4363"/>
+        <joint name="lbr_one_A3" value="0"/>
+        <joint name="lbr_one_A4" value="1.5707"/>
+        <joint name="lbr_one_A5" value="0"/>
+        <joint name="lbr_one_A6" value="0"/>
+        <joint name="lbr_one_A7" value="0"/>
+        <joint name="lbr_two_A1" value="0"/>
+        <joint name="lbr_two_A2" value="0.4363"/>
+        <joint name="lbr_two_A3" value="0"/>
+        <joint name="lbr_two_A4" value="1.5707"/>
+        <joint name="lbr_two_A5" value="0"/>
+        <joint name="lbr_two_A6" value="0"/>
+        <joint name="lbr_two_A7" value="0"/>
+    </group_state>
+
+    <disable_collisions link1="lbr_one_link_0" link2="lbr_one_link_1" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_0" link2="lbr_one_link_2" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_0" link2="lbr_one_link_3" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_0" link2="lbr_one_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_2" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_3" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_1" link2="lbr_one_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_2" link2="lbr_one_link_3" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_2" link2="lbr_one_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_2" link2="lbr_one_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_2" link2="lbr_one_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_2" link2="lbr_one_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_3" link2="lbr_one_link_4" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_3" link2="lbr_one_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_3" link2="lbr_one_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_3" link2="lbr_one_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_4" link2="lbr_one_link_5" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_4" link2="lbr_one_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_4" link2="lbr_one_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_5" link2="lbr_one_link_6" reason="Adjacent"/>
+    <disable_collisions link1="lbr_one_link_5" link2="lbr_one_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_one_link_6" link2="lbr_one_link_7" reason="Adjacent"/>
+    <xacro:if value="${gripper_on}">
+        <disable_collisions link1="lbr_one_link_6" link2="lbr_one_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_one_link_7" link2="lbr_one_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_one_link_ee" link2="lbr_one_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_one_gripper_base_link" link2="lbr_one_left_finger_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_one_gripper_base_link" link2="lbr_one_right_finger_link" reason="Adjacent"/>
+    </xacro:if>
+
+    <disable_collisions link1="lbr_two_link_0" link2="lbr_two_link_1" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_0" link2="lbr_two_link_2" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_0" link2="lbr_two_link_3" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_0" link2="lbr_two_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_2" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_3" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_1" link2="lbr_two_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_2" link2="lbr_two_link_3" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_2" link2="lbr_two_link_4" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_2" link2="lbr_two_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_2" link2="lbr_two_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_2" link2="lbr_two_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_3" link2="lbr_two_link_4" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_3" link2="lbr_two_link_5" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_3" link2="lbr_two_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_3" link2="lbr_two_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_4" link2="lbr_two_link_5" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_4" link2="lbr_two_link_6" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_4" link2="lbr_two_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_5" link2="lbr_two_link_6" reason="Adjacent"/>
+    <disable_collisions link1="lbr_two_link_5" link2="lbr_two_link_7" reason="Never"/>
+    <disable_collisions link1="lbr_two_link_6" link2="lbr_two_link_7" reason="Adjacent"/>
+    <xacro:if value="${gripper_on}">
+        <disable_collisions link1="lbr_two_link_6" link2="lbr_two_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_two_link_7" link2="lbr_two_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_two_link_ee" link2="lbr_two_gripper_base_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_two_gripper_base_link" link2="lbr_two_left_finger_link" reason="Adjacent"/>
+        <disable_collisions link1="lbr_two_gripper_base_link" link2="lbr_two_right_finger_link" reason="Adjacent"/>
+    </xacro:if>
+</robot>

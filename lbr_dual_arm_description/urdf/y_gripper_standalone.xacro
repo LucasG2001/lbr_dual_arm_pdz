@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+
+<!-- Debug-only viewer, renders just the Y-gripper mounted on a stand-in flange link
+(reusing the real lbr_one_link_7 visual mesh, at the same xyz "0 0 -1.231"
+mesh-origin offset lbr_dual_arm.xacro's iiwa7 macro uses, so the flange
+silhouette lines up exactly like it does on the full dual-arm robot), for
+inspecting the gripper mount rotation/mesh clearance in isolation without
+launching the whole dual-arm stack. mount_yaw mirrors the y_gripper macro's
+own arg, so passing the same value used in lbr_dual_arm.xacro reproduces
+what the full robot shows.
+
+Also carries a stand-in lbr_one_link_ee (same 0.035 m offset from link_7 as
+iiwa7_description.xacro's joint_ee), since y_gripper.xacro now mounts the
+gripper on link_ee rather than link_7 directly. -->
+<robot name="y_gripper_standalone" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:include filename="$(find lbr_dual_arm_description)/urdf/y_gripper.xacro" />
+
+    <xacro:arg name="mount_yaw" default="0" />
+
+    <link name="lbr_one_link_7">
+        <visual>
+            <origin rpy="0 0 0" xyz="0.0 0.0 -1.231" />
+            <geometry>
+                <mesh filename="package://lbr_description/meshes/iiwa7/visual/link_7.dae" />
+            </geometry>
+        </visual>
+        <collision>
+            <origin rpy="0 0 0" xyz="0.0 0.0 -1.231" />
+            <geometry>
+                <mesh filename="package://lbr_description/meshes/iiwa7/collision/link_7.stl" />
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="lbr_one_joint_ee" type="fixed">
+        <parent link="lbr_one_link_7" />
+        <child link="lbr_one_link_ee" />
+        <origin xyz="0 0 0.035" rpy="0 0 0" />
+    </joint>
+
+    <link name="lbr_one_link_ee" />
+
+    <xacro:y_gripper robot_name="lbr_one" mount_yaw="$(arg mount_yaw)" />
+</robot>

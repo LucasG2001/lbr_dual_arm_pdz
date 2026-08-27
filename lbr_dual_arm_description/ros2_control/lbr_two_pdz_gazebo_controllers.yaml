@@ -1,0 +1,32 @@
+# gz_ros2_control parameters for lbr_two's controller_manager (namespace /lbr_two). See
+# lbr_one_pdz_gazebo_controllers.yaml for the full explanation -- identical structure, lbr_two
+# joint names.
+/**/controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+/**/joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - lbr_two_A1
+      - lbr_two_A2
+      - lbr_two_A3
+      - lbr_two_A4
+      - lbr_two_A5
+      - lbr_two_A6
+      - lbr_two_A7
+      - lbr_two_pdz_gripper_left_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 50.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: true
