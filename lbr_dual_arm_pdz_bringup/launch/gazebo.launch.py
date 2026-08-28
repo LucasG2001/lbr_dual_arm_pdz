@@ -145,6 +145,15 @@ def generate_launch_description() -> LaunchDescription:
     with open(os.path.join(plumbers_block_share, "spawn_poses.json")) as f:
         spawn_poses = json.load(f)
 
+    # spawn_poses.json z's are in the dual-arm board frame whose origin (base_link, where the
+    # robot spawns at world z=0) is the two KUKA bases' mounting plane -- 2.5cm ABOVE the table
+    # surface, since the real rig sits both bases on a ~2.5cm riser block
+    # (get_kuka_mount_block_height() in Fabrica's planning/robot/workcell.py; same convention as
+    # lbr_dual_arm_bringup/config/mock_scene_objects.yaml). worlds/plumbers_block.sdf's "table"
+    # model has its top face at z=-0.025 to match, so drop every spawned asset by this riser
+    # height to seat it on the table rather than leaving it floating 2.5cm above.
+    TABLE_RISER_M = 0.025
+
     spawn_asset_nodes = []
     for model_name, pose in spawn_poses.items():
         # TEMP diagnostic (2026-08-25): skip the fixture (heaviest real-mesh collision, main RTF
@@ -153,6 +162,7 @@ def generate_launch_description() -> LaunchDescription:
             continue
         model_sdf = os.path.join(plumbers_block_share, "models", model_name, "model.sdf")
         x, y, z = pose["pos"]
+        z -= TABLE_RISER_M
         roll, pitch, yaw = pose["rpy"]
         spawn_asset_nodes.append(
             Node(

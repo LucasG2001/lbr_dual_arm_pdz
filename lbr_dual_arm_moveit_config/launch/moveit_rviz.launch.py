@@ -14,6 +14,17 @@ def generate_launch_description():
     ld.add_action(DeclareLaunchArgument("use_gripper", default_value="true"))
     ld.add_action(
         DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description=(
+                "Run RViz on the Gazebo /clock -- set true when move_group is "
+                "launched with use_sim_time:=true against a gz-sim rig, or "
+                "RViz's TF display drops out on the wall/sim clock mismatch."
+            ),
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
             name="robot_name",
             default_value="lbr_dual_arm",
             description=(
@@ -73,6 +84,7 @@ def generate_launch_description():
             moveit_config.planning_pipelines,
             moveit_config.robot_description_kinematics,
             moveit_config.joint_limits,
+            {"use_sim_time": LaunchConfiguration("use_sim_time")},
         ],
         remappings=[
             ("robot_description", PathJoinSubstitution([robot_name, "robot_description"])),

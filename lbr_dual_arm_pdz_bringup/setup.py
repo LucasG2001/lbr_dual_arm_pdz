@@ -26,6 +26,7 @@ setup(
         "console_scripts": [
             "plan_executor_node = lbr_dual_arm_pdz_bringup.plan_executor_node:main",
             "hardware_plan_executor_node = lbr_dual_arm_pdz_bringup.hardware_plan_executor_node:main",
+            "variable_impedance_plan_executor_node = lbr_dual_arm_pdz_bringup.variable_impedance_plan_executor_node:main",
         ],
     },
 )

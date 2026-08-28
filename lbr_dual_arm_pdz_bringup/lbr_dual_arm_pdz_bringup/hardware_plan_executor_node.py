@@ -61,14 +61,15 @@ Differences from plan_executor_node.py (the Gazebo/pdz-gripper version), and why
         so nothing extra is needed after them. ~/hold_close returns as soon as the servo STARTS
         closing, so this node then _spin_sleep(GRIPPER_CLOSE_SETTLE_S) (10.0s) after a grasp --
         before the plan's next move, the transport that carries the just-gripped part.
-      * At startup this node homes both grippers before the plan, each stage fired on both sides
-        at once (_call_gripper_all): ~/calibrate (sweeps the stroke so ~/set_position has
-        open/closed encoder limits to map against -- the plan's first gripper entry is a
-        set_position), then ~/hold_close (confirms the jaws travel and clears anything left in
-        them from a prior run), a settle wait, then ~/open (the plan's own starting state for
-        both jaws). Stages stay sequential. Because the startup homing already does this, run()
-        SKIPS the plan's own description=='init' gripper entries (motion.pkl entries 2-3);
-        otherwise the grippers visibly home twice, back to back.
+      * At startup this node homes both grippers before the plan -- ONE home cycle per gripper,
+        each stage fired on both sides at once (_call_gripper_all): ~/calibrate (sweeps the
+        stroke so ~/set_position has open/closed encoder limits to map against -- the plan's
+        first gripper entry is a set_position -- and brings the jaws to a known state), then
+        ~/open (the plan's own starting state for both jaws). Stages stay sequential. No
+        separate ~/hold_close+settle: the calibrate sweep already drives the jaws closed, so
+        adding it homed/closed each gripper twice. Because the startup homing already does this,
+        run() SKIPS the plan's own description=='init' gripper entries (motion.pkl entries 2-3);
+        otherwise the grippers home twice, back to back.
       * On an aborted run (any exception, incl. Ctrl-C) main() calls ~/stop on both grippers so
         the servos aren't left gripping after the node exits. A normal plan completion leaves the
         grippers in whatever state its last entries commanded (plumbers_block: both
@@ -297,25 +298,20 @@ class HardwarePlanExecutor(Node):
                         f'/{GRIPPER_NAMESPACES[1]}, update GRIPPER_CONTROLLER_NODE / '
                         'GRIPPER_NAMESPACES / ROLE_TO_GRIPPER_NS here.')
 
-        # Bring both grippers to a known physical state before the plan. Each stage runs on BOTH
-        # sides concurrently (_call_gripper_all): ~/calibrate first (sweeps the stroke so
-        # ~/set_position has open/closed encoder limits to map against -- the plan's very first
-        # gripper entry is a set_position), then one hold_close per side (confirms the jaws
-        # travel, and clears anything left in them from a prior run), a settle wait (hold_close
-        # returns immediately -- see _call_hold_close), then open per side (the plan's own
-        # starting state for both jaws). Stages stay sequential (calibrate must finish before the
-        # jaws are driven). Because startup homing already does this, run() skips the plan's own
-        # description=='init' gripper entries so the grippers don't visibly home twice.
+        # Bring both grippers to a known physical state before the plan -- ONE home cycle per
+        # gripper. Each stage runs on BOTH sides concurrently (_call_gripper_all): ~/calibrate
+        # first (sweeps the stroke so ~/set_position has open/closed encoder limits to map
+        # against -- the plan's very first gripper entry is a set_position), then open per side
+        # (the plan's own starting state for both jaws). Stages stay sequential (calibrate must
+        # finish before the jaws are driven). No separate hold_close+settle here: the calibrate
+        # sweep already drives the jaws closed, so adding it homed/closed each gripper twice.
+        # Because startup homing already does this, run() skips the plan's own
+        # description=='init' gripper entries so the grippers don't home twice.
         self.get_logger().info(
             'Homing both grippers before the plan (each stage both sides in parallel): '
-            'calibrate, hold_close (confirm travel), settle, then open...')
+            'calibrate, then open...')
         self._call_gripper_all(
             self._gripper_calibrate_clients, Trigger.Request(), 'calibrate', 'home')
-        hold_close_req = HoldClose.Request()
-        hold_close_req.torque_limit = self._gripper_torque
-        self._call_gripper_all(
-            self._gripper_hold_close_clients, hold_close_req, 'hold_close', 'home')
-        self._spin_sleep(GRIPPER_CLOSE_SETTLE_S)
         self._call_gripper_all(
             self._gripper_open_clients, Trigger.Request(), 'open', 'home')
 

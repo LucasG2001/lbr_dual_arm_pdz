@@ -8,8 +8,8 @@
   <license>Proprietary</license>
 
   <exec_depend>control_msgs</exec_depend>
-  <!-- cartesian_impedance_controller/CartesianImpedanceController (kuka_lbr_control workspace)
-       -- only loaded for gazebo.launch.py arm_control:=cartesian_impedance. -->
+  <!-- cartesian_impedance_controller/CartesianImpedanceController (kuka_lbr_control workspace),
+       only loaded for gazebo.launch.py arm_control:=cartesian_impedance. -->
   <exec_depend>cartesian_impedance_controller</exec_depend>
   <exec_depend>lbr_bringup</exec_depend>
   <exec_depend>lbr_dual_arm_description</exec_depend>
@@ -22,9 +22,9 @@
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>trajectory_msgs</exec_depend>
-  <!-- HoldClose.srv for hardware_plan_executor_node.py --gripper (servo_gripper_julien,
-       workspace ~/Workspaces/servo_test). Only needed for gripper actuation; the node
-       tolerates its absence for arm-only replay. -->
+  <!-- HoldClose.srv for hardware_plan_executor_node.py with the gripper CLI flag
+       (servo_gripper_julien, workspace ~/Workspaces/servo_test). Only needed for
+       gripper actuation; the node tolerates its absence for arm-only replay. -->
   <exec_depend>servo_gripper_julien</exec_depend>
 
   <test_depend>ament_copyright</test_depend>

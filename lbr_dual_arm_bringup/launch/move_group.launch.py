@@ -12,10 +12,11 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import PushRosNamespace
+from launch_ros.actions import PushRosNamespace, SetParameter
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 from moveit_configs_utils import MoveItConfigsBuilder
-from moveit_configs_utils.launches import generate_move_group_launch
+from moveit_configs_utils.launch_utils import DeclareBooleanLaunchArg, add_debuggable_node
 
 # Absolute path to this package's own source tree, so its plain (not
 # ROS-installed) scripts/publish_mock_scene_objects.py and
@@ -81,6 +82,80 @@ def launch_setup(context, *args, **kwargs):
 
     moveit_config = moveit_config_builder.to_moveit_configs()
 
+    # move_group node -- this inlines moveit_configs_utils'
+    # generate_move_group_launch() (moveit_configs_utils/launches.py) rather
+    # than calling it, purely so ros_arguments can be passed to the Node (that
+    # helper exposes no hook for it). Keep the parameter/flag list in sync with
+    # upstream on MoveIt upgrades; the only intentional addition is the
+    # ros_arguments log-level below.
+    move_group_ld = LaunchDescription()
+    move_group_ld.add_action(DeclareBooleanLaunchArg("debug", default_value=False))
+    move_group_ld.add_action(
+        DeclareBooleanLaunchArg("allow_trajectory_execution", default_value=True)
+    )
+    move_group_ld.add_action(
+        DeclareBooleanLaunchArg("publish_monitored_planning_scene", default_value=True)
+    )
+    move_group_ld.add_action(
+        DeclareLaunchArgument(
+            "capabilities",
+            default_value=moveit_config.move_group_capabilities["capabilities"],
+        )
+    )
+    move_group_ld.add_action(
+        DeclareLaunchArgument(
+            "disable_capabilities",
+            default_value=moveit_config.move_group_capabilities["disable_capabilities"],
+        )
+    )
+    move_group_ld.add_action(
+        DeclareBooleanLaunchArg("monitor_dynamics", default_value=False)
+    )
+    should_publish = LaunchConfiguration("publish_monitored_planning_scene")
+    move_group_configuration = {
+        "publish_robot_description_semantic": True,
+        "allow_trajectory_execution": LaunchConfiguration("allow_trajectory_execution"),
+        "capabilities": ParameterValue(
+            LaunchConfiguration("capabilities"), value_type=str
+        ),
+        "disable_capabilities": ParameterValue(
+            LaunchConfiguration("disable_capabilities"), value_type=str
+        ),
+        "publish_planning_scene": should_publish,
+        "publish_geometry_updates": should_publish,
+        "publish_state_updates": should_publish,
+        "publish_transforms_updates": should_publish,
+        "monitor_dynamics": False,
+    }
+    move_group_params = [moveit_config.to_dict(), move_group_configuration]
+
+    # mode:=gazebo: lbr_dual_arm_pdz_bringup's joint_state_broadcaster publishes
+    # the two pdz finger joints (lbr_{one,two}_pdz_gripper_left_finger_joint),
+    # which move_group's use_gripper:=false robot model does not contain -- so
+    # CurrentStateMonitor logs "Joint '...' not found in model" at ERROR on
+    # every /joint_states message (~50 Hz). It is harmless (all 14 arm joints
+    # are present; planning and execution work), but it floods the console.
+    # Raise just that one logger's threshold for the gz-sim path; mock/hardware
+    # are left completely untouched (ros_arguments stays None).
+    move_group_ros_arguments = None
+    if mode == "gazebo":
+        move_group_ros_arguments = [
+            "--log-level",
+            "moveit_robot_model.robot_model:=FATAL",
+        ]
+
+    add_debuggable_node(
+        move_group_ld,
+        package="moveit_ros_move_group",
+        executable="move_group",
+        commands_file=str(moveit_config.package_path / "launch" / "gdb_settings.gdb"),
+        output="screen",
+        parameters=move_group_params,
+        extra_debug_args=["--debug"],
+        additional_env={"DISPLAY": os.environ.get("DISPLAY", "")},
+        ros_arguments=move_group_ros_arguments,
+    )
+
     # move_group must run under the same namespace as robot_state_publisher
     # and ros2_control_node (see hardware.launch.py/mock.launch.py) so its
     # default topic/action names (joint_states, the controller's
@@ -90,7 +165,15 @@ def launch_setup(context, *args, **kwargs):
         GroupAction(
             [
                 PushRosNamespace(robot_name),
-                *generate_move_group_launch(moveit_config).entities,
+                # When driving a gz-sim rig (mode:=gazebo,
+                # lbr_dual_arm_pdz_bringup/launch/gazebo.launch.py), move_group
+                # must run on the Gazebo /clock: otherwise it stamps
+                # trajectories and evaluates goal-time tolerance against wall
+                # time while cartesian_impedance_lbr_one/_two run on sim time,
+                # and every execution aborts as GOAL_TOLERANCE_VIOLATED.
+                # Stays false (wall time) for mock/hardware.
+                SetParameter("use_sim_time", LaunchConfiguration("use_sim_time")),
+                *move_group_ld.entities,
             ]
         )
     ]
@@ -177,6 +260,19 @@ def generate_launch_description():
     )
 
     ld.add_action(
+        DeclareLaunchArgument(
+            name="use_sim_time",
+            default_value="false",
+            description=(
+                "Run move_group and RViz on the Gazebo /clock. Set true "
+                "together with mode:=gazebo and robot_name:=lbr_dual_arm_pdz "
+                "to drive lbr_dual_arm_pdz_bringup's gz-sim rig; leave false "
+                "for mock/hardware."
+            ),
+        )
+    )
+
+    ld.add_action(
         OpaqueFunction(function=launch_setup)
     )
 
@@ -195,6 +291,7 @@ def generate_launch_description():
                 "mode": LaunchConfiguration("mode"),
                 "use_gripper": LaunchConfiguration("use_gripper"),
                 "robot_name": LaunchConfiguration("robot_name"),
+                "use_sim_time": LaunchConfiguration("use_sim_time"),
             }.items(),
             condition=IfCondition(LaunchConfiguration("rviz")),
         )

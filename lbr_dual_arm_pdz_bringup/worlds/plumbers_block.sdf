@@ -25,14 +25,19 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Ground plane at the real rig's floor (z = -0.025, i.e. table_z per
-    planning/robot/workcell.py:get_kuka_mount_block_height -- the two KUKA
-    bases sit 2.5cm above this on their own riser blocks; see the approved
-    plan's fixture-placement finding #2). A flat box stands in for the real
-    table -- colors/materials are not modeled beyond a plain grey. -->
+    <!-- Flat box standing in for the real table (colors/materials not modeled
+    beyond a plain grey). Its TOP FACE must sit at z = -0.025: the dual-arm
+    board frame's origin (base_link) is the two KUKA bases' mounting plane,
+    and the real rig sits both bases on a ~2.5cm riser block above the table
+    (get_kuka_mount_block_height() in planning/robot/workcell.py; same
+    convention as lbr_dual_arm_bringup/config/mock_scene_objects.yaml). <pose>
+    is the box CENTER, so with a 0.05 m tall box the center is at
+    -0.025 - 0.05/2 = -0.05 (matches mock_scene_objects.yaml's "table"
+    object). This is what gives the spawned robot its 2.5cm elevation above
+    the table surface. -->
     <model name="table">
       <static>true</static>
-      <pose>0 0 -0.0251 0 0 0</pose>
+      <pose>0 0 -0.05 0 0 0</pose>
       <link name="link">
         <collision name="collision">
           <geometry>

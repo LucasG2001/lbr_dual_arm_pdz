@@ -110,7 +110,7 @@
       rot_x: 75.0
       rot_y: 75.0
       rot_z: 75.0
-    nullspace_stiffness: 75.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
+    nullspace_stiffness: 10.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
     trajectory_nullspace_stiffness: 75.0 # Nm/rad, overrides nullspace_stiffness while EXECUTING/HOLDING a MoveIt trajectory -- code default (5.0) was too soft for A7 to converge within goal tolerance, causing trajectories to time out into ABORTED (see impedance jumps.md #1, jump #2); raise further if A7 still doesn't converge, but watch Cartesian tracking accuracy as a trade-off
     impedance_blend_alpha: 0.1 # EMA blend factor/cycle toward the current stiffness/damping/nullspace_stiffness target -- see note above
     compensate_gravity: false # KUKA FRI joint-impedance mode already compensates gravity internally -- true here double-counts it (see impedance jumps.md #7)
@@ -147,7 +147,7 @@
       rot_x: 75.0
       rot_y: 75.0
       rot_z: 75.0
-    nullspace_stiffness: 75.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
+    nullspace_stiffness: 10.0 # set > 0 at runtime once nullspace_desired_configuration has been set (see set_nullspace_target())
     trajectory_nullspace_stiffness: 75.0 # Nm/rad, overrides nullspace_stiffness while EXECUTING/HOLDING a MoveIt trajectory -- code default (5.0) was too soft for A7 to converge within goal tolerance, causing trajectories to time out into ABORTED (see impedance jumps.md #1, jump #2); raise further if A7 still doesn't converge, but watch Cartesian tracking accuracy as a trade-off
     impedance_blend_alpha: 0.1 # EMA blend factor/cycle toward the current stiffness/damping/nullspace_stiffness target -- see note above
     compensate_gravity: false # KUKA FRI joint-impedance mode already compensates gravity internally -- true here double-counts it (see impedance jumps.md #7)

@@ -65,6 +65,7 @@ from rclpy.parameter import Parameter
 from rclpy.utilities import remove_ros_args
 from ros_gz_interfaces.srv import SetEntityPose
 from scipy.spatial.transform import Rotation
+from std_msgs.msg import Float64MultiArray
 from trajectory_msgs.msg import JointTrajectoryPoint
 
 FPS = 30.0
@@ -136,24 +137,64 @@ class PlanExecutor(Node):
 
         clients_by_ctrl = {}
 
-        def _client(ctrl):
+        def _client(ctrl, require=True, timeout_sec=20.0):
             if ctrl not in clients_by_ctrl:
                 c = ActionClient(
                     self, FollowJointTrajectory,
                     f'/{robot_name}/{ctrl}/follow_joint_trajectory')
                 self.get_logger().info(f'Waiting for {ctrl} action server...')
-                c.wait_for_server()
+                # Bounded wait: for a REQUIRED (arm) controller a missing server almost always
+                # means this node's --arm-control doesn't match the value gazebo.launch.py was
+                # started with (that arg selects which controllers get spawned), so fail loudly
+                # instead of hanging forever.
+                if not c.wait_for_server(timeout_sec=timeout_sec):
+                    if require:
+                        raise RuntimeError(
+                            f'{ctrl} action server not available after {timeout_sec:.0f}s at '
+                            f'/{robot_name}/{ctrl}/follow_joint_trajectory. Check that '
+                            f'gazebo.launch.py was started with arm_control:={arm_control} '
+                            f'(must match this node\'s --arm-control) and that the controller '
+                            f'spawned -- `ros2 control list_controllers`.')
+                    # In Gazebo the pdz gripper often has no dedicated gripper_controller_* --
+                    # don't block or fail on it: run the plan without gripper actuation. Held-
+                    # part bookkeeping (and the traj.npy teleporting driven by it) is kept.
+                    self.get_logger().warn(
+                        f'{ctrl} action server not available after {timeout_sec:.0f}s -- '
+                        f'running without a gripper controller; gripper open/close commands '
+                        f'will be skipped (held-part teleporting still works).')
+                    clients_by_ctrl[ctrl] = None
+                    return None
                 clients_by_ctrl[ctrl] = c
             return clients_by_ctrl[ctrl]
 
         self._arm_clients = {a: _client(arm_ctrl_name[a]) for a in ('lbr_one', 'lbr_two')}
-        self._gripper_clients = {a: _client(gripper_ctrl_name[a]) for a in ('lbr_one', 'lbr_two')}
+        # Gripper controller is best-effort only (see _client): short wait, non-fatal if absent
+        # -- so a Gazebo run without a spawned gripper_controller_* isn't held up by it.
+        self._gripper_clients = {a: _client(gripper_ctrl_name[a], require=False, timeout_sec=5.0)
+                                 for a in ('lbr_one', 'lbr_two')}
 
         self._set_pose_client = self.create_client(SetEntityPose, f'/world/{world_name}/set_pose')
         if not self._set_pose_client.wait_for_service(timeout_sec=10.0):
             self.get_logger().warn(
                 f'/world/{world_name}/set_pose service not available -- held parts will not '
                 'visually follow the gripper. Continuing anyway (arm/gripper motion is unaffected).')
+
+        # cartesian_impedance_{arm}/data_impedance (std_msgs/Float64MultiArray, len 14) --
+        # data[0:6] is the live task-space pose error the controller feeds into its stiffness
+        # spring: [target - EE] in the base frame, position xyz (m) then rotation as a
+        # Rodrigues (axis*angle) vector xyz (rad). The controller's trajectory target frame is
+        # driven from the sampled joint trajectory via FK, so at a segment's end data[0:6] IS
+        # the Cartesian goal error. Cached here and reported on a goal-tolerance violation.
+        # (motion_error is clamped controller-side at |pos|<=1 m / |rot|<=1 rad -- never
+        # reached at goal-tolerance scale.) Position-mode gripper goals have no such topic.
+        self._cart_err = {}
+        if self.arm_control == 'cartesian_impedance':
+            for a in ('lbr_one', 'lbr_two'):
+                self.create_subscription(
+                    Float64MultiArray,
+                    f'/{robot_name}/cartesian_impedance_{a}/data_impedance',
+                    lambda msg, arm=a: self._cart_err.__setitem__(arm, list(msg.data)),
+                    10)
 
         self.frame_idx = 0  # traj.npy index of the current (already-reached) state
         self.held_part = {'hold': None, 'move': None}
@@ -177,14 +218,82 @@ class PlanExecutor(Node):
             if self._set_pose_client.service_is_ready():
                 self._set_pose_client.call_async(req)  # fire-and-forget; next tick supersedes it
 
+    def _cartesian_error_str(self, arm: str):
+        """6D task-space error (impedance target - EE, base frame) from the arm's last
+        cartesian_impedance_{arm}/data_impedance sample, or None if unavailable."""
+        d = self._cart_err.get(arm)
+        if not d or len(d) < 6:
+            return None
+        px, py, pz, rx, ry, rz = d[:6]
+        pos_mm = np.array([px, py, pz]) * 1000.0
+        rot_deg = np.degrees([rx, ry, rz])
+        trans_norm_mm = float(np.linalg.norm(pos_mm))
+        rot_norm_deg = float(np.linalg.norm(rot_deg))
+        sixd_norm = float(np.linalg.norm([px, py, pz, rx, ry, rz]))  # mixed m + rad
+        return (
+            'cartesian error (impedance target - EE, base frame): '
+            f'|trans|={trans_norm_mm:.3f} mm [dx={pos_mm[0]:+.3f}, dy={pos_mm[1]:+.3f}, '
+            f'dz={pos_mm[2]:+.3f} mm]; |rot|={rot_norm_deg:.3f} deg [rx={rot_deg[0]:+.3f}, '
+            f'ry={rot_deg[1]:+.3f}, rz={rot_deg[2]:+.3f} deg]; 6D vector (m,rad)=['
+            f'{px:+.5f}, {py:+.5f}, {pz:+.5f}, {rx:+.5f}, {ry:+.5f}, {rz:+.5f}] '
+            f'||6D||={sixd_norm:.5f}')
+
+    # -- goal-tolerance violation reporting ---------------------------------------------------
+    def _goal_tol_violation_report(self, arm, joint_names, points, result) -> str:
+        """Quantify by how much the goal tolerance was violated, per joint AND in task space.
+
+        GOAL_TOLERANCE_VIOLATED means the controller compared the LAST commanded trajectory
+        point against the measured joint state at the end of the goal-time window and found
+        at least one joint outside trajectory_default_goal_tolerance. So the number that
+        explains the abort is (commanded final position - measured position). The feedback
+        ``error`` field (desired-actual) is only the running setpoint-tracking error, which
+        stays ~0 under impedance control and does NOT reflect the goal miss -- it is reported
+        separately, and only when non-trivial. The 6D task-space error (from the controller's
+        data_impedance topic) and the controller's ``error_string`` are appended when
+        available."""
+        parts = []
+        fb = getattr(self, '_last_feedback', None)
+        target = dict(zip(joint_names, points[-1].positions)) if points else {}
+        if fb is not None and len(fb.actual.positions):
+            fb_names = list(fb.joint_names) or list(joint_names)
+            actual = dict(zip(fb_names, fb.actual.positions))
+            miss = {n: target[n] - actual[n] for n in target if n in actual}
+            if miss:
+                pairs = sorted(miss.items(), key=lambda p: abs(p[1]), reverse=True)
+                max_abs = max(abs(v) for v in miss.values())
+                per_joint = ', '.join(
+                    f'{n}={v:+.5f} rad ({np.degrees(v):+.3f} deg)' for n, v in pairs)
+                parts.append(
+                    f'goal tolerance violation (commanded final point - measured): '
+                    f'max |miss|={max_abs:.5f} rad ({np.degrees(max_abs):.3f} deg); '
+                    f'per joint [{per_joint}]')
+            track = list(fb.error.positions)
+            if track and any(abs(e) > 1e-4 for e in track):
+                te = max(abs(e) for e in track)
+                parts.append(
+                    f'setpoint tracking error at abort: max |err|={te:.5f} rad '
+                    f'({np.degrees(te):.3f} deg)')
+        else:
+            parts.append('no trajectory feedback received -- per-joint miss unavailable')
+        cart = self._cartesian_error_str(arm)
+        if cart:
+            parts.append(cart)
+        err_str = '' if result is None else (result.result.error_string or '').strip()
+        if err_str:
+            parts.append(f'controller: {err_str}')
+        return '; '.join(parts)
+
     # -- single-goal execution, ticking frame_idx + part pose at 30 Hz alongside it -------------
-    def _run_goal(self, arm: str, action_client, joint_names, points, n_frames_to_advance: int):
+    def _run_goal(self, arm: str, action_client, joint_names, points, n_frames_to_advance: int,
+                  tolerate_goal_tol: bool = False):
         goal = FollowJointTrajectory.Goal()
         goal.trajectory.joint_names = joint_names
         goal.trajectory.points = points
         goal.goal_time_tolerance.sec = 5
 
-        send_future = action_client.send_goal_async(goal)
+        self._last_feedback = None
+        send_future = action_client.send_goal_async(
+            goal, feedback_callback=lambda msg: setattr(self, '_last_feedback', msg.feedback))
         rclpy.spin_until_future_complete(self, send_future)
         goal_handle = send_future.result()
         if goal_handle is None or not goal_handle.accepted:
@@ -210,7 +319,20 @@ class PlanExecutor(Node):
         rclpy.spin_until_future_complete(self, result_future)
         result = result_future.result()
         if result is None or result.result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
-            self.get_logger().error(f'[{arm}] trajectory execution failed: {result}')
+            code = None if result is None else result.result.error_code
+            # cartesian_impedance_controller aborts with GOAL_TOLERANCE_VIOLATED whenever the
+            # compliant arm doesn't settle every joint inside trajectory_default_goal_tolerance
+            # within the goal-time window -- expected for impedance control, not an execution
+            # failure. The plan is a strict sequential timeline and we've already ticked through
+            # this segment's frames, so warn and move on rather than aborting the whole replay.
+            report = self._goal_tol_violation_report(arm, joint_names, points, result)
+            if tolerate_goal_tol and code == FollowJointTrajectory.Result.GOAL_TOLERANCE_VIOLATED:
+                self.get_logger().warn(
+                    f'[{arm}] goal tolerance not met (impedance control, expected) -- '
+                    f'continuing. {report}')
+            else:
+                self.get_logger().error(
+                    f'[{arm}] trajectory execution failed (error_code={code}). {report}')
 
     def _send_arm_path(self, role: str, path: np.ndarray, description: str, active_part):
         arm = ROLE_TO_ARM[role]
@@ -224,19 +346,26 @@ class PlanExecutor(Node):
         self.get_logger().info(
             f'[{arm}] {description} ({len(path)} waypoints, part={active_part})')
         self._run_goal(arm, self._arm_clients[arm], ARM_JOINTS[arm], points,
-                       n_frames_to_advance=len(path))
+                       n_frames_to_advance=len(path),
+                       tolerate_goal_tol=(self.arm_control == 'cartesian_impedance'))
 
     def _send_gripper_command(self, role: str, open_ratio: float, description: str, active_part):
         arm = ROLE_TO_ARM[role]
         position = gripper_open_ratio_to_position(open_ratio)
-        p = JointTrajectoryPoint()
-        p.positions = [position]  # left driving joint only -- right is a mimic, see GRIPPER_JOINTS
-        p.time_from_start.sec = 0
-        p.time_from_start.nanosec = int(0.5e9)
-        self.get_logger().info(
-            f'[{arm}] gripper {description} open_ratio={open_ratio:.3f} -> {position * 1000:.1f}mm')
-        self._run_goal(arm, self._gripper_clients[arm], [GRIPPER_JOINTS[arm]], [p],
-                       n_frames_to_advance=1)
+        client = self._gripper_clients[arm]
+        if client is None:
+            # No gripper controller (typical Gazebo run) -- skip actuation, keep bookkeeping.
+            self.get_logger().warn(
+                f'[{arm}] gripper {description} (open_ratio={open_ratio:.3f} -> '
+                f'{position * 1000:.1f}mm) skipped -- no gripper controller available')
+        else:
+            p = JointTrajectoryPoint()
+            p.positions = [position]  # left driving joint only -- right is a mimic, see GRIPPER_JOINTS
+            p.time_from_start.sec = 0
+            p.time_from_start.nanosec = int(0.5e9)
+            self.get_logger().info(
+                f'[{arm}] gripper {description} open_ratio={open_ratio:.3f} -> {position * 1000:.1f}mm')
+            self._run_goal(arm, client, [GRIPPER_JOINTS[arm]], [p], n_frames_to_advance=1)
 
         if description == 'close' and active_part is not None:
             self.held_part[role] = active_part

@@ -20,6 +20,12 @@
 #     such layer (effort only). kuka_control's config comment: "must be false when using gazebo".
 #   * compensate_gravity: false -> true. FRI compensates gravity internally on hardware; in sim
 #     the controller's own RNE (KDL, from the URDF inertials) must hold the arm up.
+#     IMPORTANT: this MUST match the Gazebo world's gravity. The controller adds +G(q) torque
+#     unconditionally when true (cartesian_impedance_controller.cpp ~line 600), so:
+#       world gravity ON  (physical end state)      -> compensate_gravity: true  (this file)
+#       world gravity OFF (plumbers_block.sdf's     -> compensate_gravity: false, or the arms
+#         "TEMP diagnostic 2026-08-25" 0 0 0)          drift upward under the uncancelled +G(q).
+#     See docs/kuka_gazebo_cartesian_impedance_quickstart.md in the Fabrica repo.
 #   * compensate_coriolis: true (kept).
 #   * nullspace_stiffness: 75.0 -> 0.0 at startup. Raise at runtime once a
 #     nullspace_desired_configuration has been set (set_parameters / set_nullspace_target),
@@ -77,16 +83,16 @@
     max_impedance_force: 70.0 # N
     max_impedance_torque: 20.0 # Nm
     stiffness: # starting point -- retune for sim, see header
-      trans_x: 1500.0
-      trans_y: 1500.0
-      trans_z: 1500.0
+      trans_x: 3000.0
+      trans_y: 3000.0
+      trans_z: 3000.0
       rot_x: 75.0
       rot_y: 75.0
       rot_z: 75.0
-    nullspace_stiffness: 0.0 # raise at runtime once nullspace_desired_configuration is set
-    trajectory_nullspace_stiffness: 75.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
+    nullspace_stiffness: 10.0 # raise at runtime once nullspace_desired_configuration is set
+    trajectory_nullspace_stiffness: 10.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
     impedance_blend_alpha: 0.1
-    compensate_gravity: true # no FRI gravity comp in sim -- controller must do it
+    compensate_gravity: false # world <gravity>0 0 0</gravity> (plumbers_block.sdf diagnostic) -- no G(q) to add; +G(q) with no world gravity to cancel it made every FollowJointTrajectory goal abort (GOAL_TOLERANCE_VIOLATED), see lbr_pdz_debug/20260827_170338_cartimp
     compensate_coriolis: true
     compensate_dJdq: false
 
@@ -114,16 +120,16 @@
     max_impedance_force: 70.0 # N
     max_impedance_torque: 20.0 # Nm
     stiffness: # starting point -- retune for sim, see header
-      trans_x: 1500.0
-      trans_y: 1500.0
-      trans_z: 1500.0
+      trans_x: 3000.0
+      trans_y: 3000.0
+      trans_z: 3000.0
       rot_x: 75.0
       rot_y: 75.0
       rot_z: 75.0
-    nullspace_stiffness: 0.0 # raise at runtime once nullspace_desired_configuration is set
-    trajectory_nullspace_stiffness: 75.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
+    nullspace_stiffness: 10.0 # raise at runtime once nullspace_desired_configuration is set
+    trajectory_nullspace_stiffness: 10.0 # Nm/rad while EXECUTING/HOLDING a FollowJointTrajectory goal
     impedance_blend_alpha: 0.1
-    compensate_gravity: true # no FRI gravity comp in sim -- controller must do it
+    compensate_gravity: false # world <gravity>0 0 0</gravity> (plumbers_block.sdf diagnostic) -- no G(q) to add; +G(q) with no world gravity to cancel it made every FollowJointTrajectory goal abort (GOAL_TOLERANCE_VIOLATED), see lbr_pdz_debug/20260827_170338_cartimp
     compensate_coriolis: true
     compensate_dJdq: false
 
