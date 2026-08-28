@@ -30,6 +30,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     OpaqueFunction,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -88,6 +89,38 @@ def generate_launch_description() -> LaunchDescription:
             " dual_arm_gazebo_cartesian_impedance_controllers.yaml. Passed through to"
             " lbr_dual_arm.xacro (which also forces the arm joints to an effort-only command"
             " interface) -- run plan_executor_node with a matching --arm-control.",
+        )
+    )
+
+    # Optionally start the unified plan_executor_node in-launch (default: off -- the operator
+    # usually watches the sim come up first, then runs it by hand). When on, it is started with
+    # the Gazebo-side args so the ONLY difference vs a real/mock run is which bringup launch
+    # ran: --controller-topology per-arm, this launch's robot_name / arm_control,
+    # --gripper-backend sim, --visualize-held-parts, --use-sim-time, --on-failure continue.
+    ld.add_action(
+        DeclareLaunchArgument(
+            name="run_executor",
+            default_value="false",
+            description="Start plan_executor_node from this launch once the sim is up"
+            " (TimerAction-delayed). Off by default.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            name="gripper_backend",
+            default_value="sim",
+            choices=["none", "sim", "servo"],
+            description="Passed to plan_executor_node --gripper-backend when run_executor:=true."
+            " sim (default) drives the simulated pdz finger joint.",
+        )
+    )
+    ld.add_action(
+        DeclareLaunchArgument(
+            name="log_dir",
+            default_value="",
+            description="motion.pkl / traj.npy directory for plan_executor_node when"
+            " run_executor:=true (empty = the node's own default,"
+            " ~/Fabrica/logs/plumbers_block_sim).",
         )
     )
 
@@ -193,7 +226,46 @@ def generate_launch_description() -> LaunchDescription:
     # here via OpaqueFunction since it's a LaunchConfiguration.
     ld.add_action(OpaqueFunction(function=_spawn_controllers))
 
+    ld.add_action(OpaqueFunction(function=_maybe_run_executor))
+
     return ld
+
+
+def _maybe_run_executor(context):
+    """Start plan_executor_node from this launch iff run_executor:=true. Resolved here (not a
+    plain IfCondition Node) so log_dir can be omitted when empty and so the Gazebo-side args
+    are assembled in one place. TimerAction-delayed to let the gz controllers spawn first --
+    the node still bounded-waits on its action server, this just avoids the first-try timeout."""
+    if LaunchConfiguration("run_executor").perform(context).lower() not in ("true", "1"):
+        return []
+
+    args = [
+        "--controller-topology", "per-arm",
+        "--robot-name", LaunchConfiguration("robot_name").perform(context),
+        "--arm-control", LaunchConfiguration("arm_control").perform(context),
+        "--gripper-backend", LaunchConfiguration("gripper_backend").perform(context),
+        "--world", "plumbers_block",
+        "--visualize-held-parts",
+        "--use-sim-time",
+        "--on-failure", "continue",
+    ]
+    log_dir = LaunchConfiguration("log_dir").perform(context)
+    if log_dir:
+        args.insert(0, log_dir)
+
+    return [
+        TimerAction(
+            period=15.0,
+            actions=[
+                Node(
+                    package="lbr_dual_arm_pdz_bringup",
+                    executable="plan_executor_node",
+                    output="screen",
+                    arguments=args,
+                )
+            ],
+        )
+    ]
 
 
 def _spawn_controllers(context):
