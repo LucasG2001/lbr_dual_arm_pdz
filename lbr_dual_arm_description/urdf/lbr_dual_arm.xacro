@@ -200,8 +200,15 @@
         registered pluginlib class under gz_ros2_control's plugin loader and crashes gz-sim on
         load if used there (confirmed: "does not exist. Declared types are
         gz_ros2_control/GazeboSimSystem ign_ros2_control/IgnitionSystem", then a GUI segfault).
-        right_finger_joint is a <mimic> of left_finger_joint (see pdz_gripper_macro.xacro) so it
-        needs no interface of its own. -->
+        right_finger_joint is a mimic of left_finger_joint (see pdz_gripper_macro.xacro). It
+        carries NO command interface (no controller drives it) but it MUST still be declared
+        here with a state interface: gz_ros2_control's mimic emulation (present in the installed
+        gz_ros2_control 0.7.20 / Fortress build; it reads the URDF mimic tag and writes the
+        follower's position each update cycle, no physics constraint) only iterates joints
+        registered under a ros2_control block. Without this block the follower is left as a
+        free, unactuated prismatic joint that flails under contact / inertial coupling and
+        never closes on a part. mode:=mock's mock_components/GenericSystem also honours the
+        mimic given a registered follower, so this block is correct for both modes. -->
         <xacro:property name="pdz_gripper_hw_plugin"
             value="${'gz_ros2_control/GazeboSimSystem' if mode == 'gazebo' else 'mock_components/GenericSystem'}" />
         <xacro:if value="${gripper == 'pdz'}">
@@ -222,6 +229,12 @@
                     </state_interface>
                     <state_interface name="velocity" />
                 </joint>
+                <joint name="lbr_one_pdz_gripper_right_finger_joint">
+                    <state_interface name="position">
+                        <param name="initial_value">0.0</param>
+                    </state_interface>
+                    <state_interface name="velocity" />
+                </joint>
             </ros2_control>
 
             <xacro:pdz_gripper parent="lbr_two_link_ee" prefix="lbr_two_">
@@ -236,6 +249,12 @@
                         <param name="min">0</param>
                         <param name="max">0.032</param>
                     </command_interface>
+                    <state_interface name="position">
+                        <param name="initial_value">0.0</param>
+                    </state_interface>
+                    <state_interface name="velocity" />
+                </joint>
+                <joint name="lbr_two_pdz_gripper_right_finger_joint">
                     <state_interface name="position">
                         <param name="initial_value">0.0</param>
                     </state_interface>
